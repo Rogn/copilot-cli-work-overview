@@ -21745,12 +21745,14 @@ function App() {
   const [error, setError] = (0, import_react.useState)(null);
   const [selectedId, setSelectedId] = (0, import_react.useState)(null);
   const [collapsed, setCollapsed] = (0, import_react.useState)(loadCollapsedGroups);
+  const [lastCheckedAt, setLastCheckedAt] = (0, import_react.useState)(null);
   const lastRevisionRef = (0, import_react.useRef)(null);
   const lastRawRef = (0, import_react.useRef)(null);
   const refresh = (0, import_react.useCallback)(async () => {
     try {
       const revision = await copilot.getRevision();
       if (revision === lastRevisionRef.current) {
+        setLastCheckedAt((/* @__PURE__ */ new Date()).toISOString());
         setError(null);
         return;
       }
@@ -21764,6 +21766,7 @@ function App() {
       lastRevisionRef.current = revision;
       lastRawRef.current = raw;
       setSnapshot(parsed);
+      setLastCheckedAt((/* @__PURE__ */ new Date()).toISOString());
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -21862,7 +21865,8 @@ function App() {
       ] }),
       snapshot && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "header-meta", children: [
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MetaPill, { label: "Source", value: "Direct SQLite" }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MetaPill, { label: "Last updated", value: fmtTime(snapshot.source.modifiedAt) }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MetaPill, { label: "Last checked", value: fmtTime(lastCheckedAt) }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MetaPill, { label: "DB updated", value: fmtTime(snapshot.source.modifiedAt) }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MetaPill, { label: "Session", value: snapshot.sessionMeta.sessionId || "Unknown" })
       ] })
     ] }),

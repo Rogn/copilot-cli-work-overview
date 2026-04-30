@@ -120,6 +120,7 @@ export function App() {
     const [error, setError] = useState<string | null>(null);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsedGroups);
+    const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
     const lastRevisionRef = useRef<string | null>(null);
     const lastRawRef = useRef<string | null>(null);
 
@@ -127,6 +128,7 @@ export function App() {
         try {
             const revision = await copilot.getRevision();
             if (revision === lastRevisionRef.current) {
+                setLastCheckedAt(new Date().toISOString());
                 setError(null);
                 return;
             }
@@ -142,6 +144,7 @@ export function App() {
             lastRevisionRef.current = revision;
             lastRawRef.current = raw;
             setSnapshot(parsed);
+            setLastCheckedAt(new Date().toISOString());
             setError(null);
         } catch (reason) {
             setError(reason instanceof Error ? reason.message : String(reason));
@@ -264,7 +267,8 @@ export function App() {
                 {snapshot && (
                     <div className="header-meta">
                         <MetaPill label="Source" value="Direct SQLite" />
-                        <MetaPill label="Last updated" value={fmtTime(snapshot.source.modifiedAt)} />
+                        <MetaPill label="Last checked" value={fmtTime(lastCheckedAt)} />
+                        <MetaPill label="DB updated" value={fmtTime(snapshot.source.modifiedAt)} />
                         <MetaPill label="Session" value={snapshot.sessionMeta.sessionId || "Unknown"} />
                     </div>
                 )}
