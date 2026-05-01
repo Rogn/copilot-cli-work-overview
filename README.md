@@ -64,3 +64,4 @@ Natural-language tool access also works through:
 - The dashboard polls the live session database and shows visible last-updated information.
 - If direct database access fails, the UI shows a clear error instead of falling back to a different source.
 - `inbox_entries` is intentionally out of scope for V1.
+- On Windows, update failures around `better_sqlite3.node` are file locks on the loaded native addon, not the session database staying locked. The installer now preserves `node_modules` during in-place updates and lets bootstrap reconcile dependency changes after reload.

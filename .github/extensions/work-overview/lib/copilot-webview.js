@@ -19,13 +19,13 @@
 import { spawn, execSync } from "node:child_process";
 import { createServer } from "node:http";
 import { readFile, rm } from "node:fs/promises";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { extname, join, normalize, sep, isAbsolute, resolve } from "node:path";
+import { basename, extname, join, normalize, sep, isAbsolute, resolve } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
-import { joinSession } from "@github/copilot-sdk/extension";
 
 const __dirname = import.meta.dirname;
+const INSTALL_STAMP_FILE = ".copilot-extension-install.json";
 
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".woff2": "font/woff2" };
 
@@ -104,9 +104,9 @@ export async function bootstrap(extDir) {
     const lock = join(extDir, "package-lock.json");
     const nodeModules = join(extDir, "node_modules");
     const hasLock = existsSync(lock);
-    const hasNodeModules = existsSync(nodeModules);
-    if (hasNodeModules) return;
+    if (!dependencyInstallRequired(extDir)) return;
 
+    const { joinSession } = await import("@github/copilot-sdk/extension");
     const session = await joinSession();
     const commands = hasLock
         ? ["npm ci --omit=dev --no-audit --no-fund", "npm install --no-audit --no-fund"]
@@ -124,6 +124,7 @@ export async function bootstrap(extDir) {
             await session.log(`Installing extension dependencies with \`${command}\`…`);
             try {
                 execSync(command, { cwd: extDir, stdio: "pipe", encoding: "utf8" });
+                writeInstallStamp(extDir);
                 await session.log("Dependencies installed.");
                 return;
             } catch (error) {
@@ -141,6 +142,43 @@ export async function bootstrap(extDir) {
     } finally {
         await session.disconnect();
     }
+}
+
+export function dependencyInstallRequired(extDir) {
+    const nodeModules = join(extDir, "node_modules");
+    if (!existsSync(nodeModules)) return true;
+    return readInstallStamp(extDir)?.signature !== getDependencyManifestSignature(extDir);
+}
+
+export function getDependencyManifestSignature(extDir) {
+    const manifestFiles = ["package-lock.json", "package.json"]
+        .map((name) => join(extDir, name))
+        .filter((path) => existsSync(path));
+
+    if (manifestFiles.length === 0) return "no-manifest-files";
+
+    return manifestFiles
+        .map((path) => {
+            const stat = statSync(path);
+            return `${basename(path)}:${stat.size}:${Math.trunc(stat.mtimeMs)}`;
+        })
+        .join("|");
+}
+
+function readInstallStamp(extDir) {
+    try {
+        return JSON.parse(readFileSync(join(extDir, INSTALL_STAMP_FILE), "utf8"));
+    } catch {
+        return null;
+    }
+}
+
+function writeInstallStamp(extDir) {
+    writeFileSync(
+        join(extDir, INSTALL_STAMP_FILE),
+        JSON.stringify({ signature: getDependencyManifestSignature(extDir) }, null, 2),
+        "utf8",
+    );
 }
 
 async function showWebview({ dir, title = "Copilot Webview", width = 900, height = 700, callbacks = {} } = {}) {

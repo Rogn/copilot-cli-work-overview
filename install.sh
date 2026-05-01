@@ -31,22 +31,24 @@ if [[ ! -d "${source_dir}" ]]; then
 fi
 
 mkdir -p "${install_root}"
-if [[ -d "${target_dir}" ]]; then
-  if ! rm -rf "${target_dir}" 2>/dev/null; then
-    echo "" >&2
-    echo "ERROR: Cannot remove existing install — files are locked." >&2
-    echo "Close the Work Overview window (or exit Copilot CLI), then re-run this script." >&2
-    exit 1
-  fi
+mkdir -p "${target_dir}"
+if ! find "${target_dir}" -mindepth 1 -maxdepth 1 ! -name node_modules -exec rm -rf {} + 2>/dev/null; then
+  echo "" >&2
+  echo "ERROR: Cannot update the existing install — files are locked." >&2
+  echo "A running Copilot CLI session can keep runtime files loaded." >&2
+  echo "This installer preserves node_modules during updates, but some files are still locked." >&2
+  echo "" >&2
+  echo "Fix: close Work Overview and reload or exit Copilot CLI, then re-run this script." >&2
+  exit 1
 fi
 
-cp -R "${source_dir}" "${target_dir}"
+tar --exclude='node_modules' --exclude='*/node_modules' -cf - -C "${source_dir}" . | tar -xf - -C "${target_dir}"
 
 echo "Installed Work Overview to ${target_dir}"
 echo ""
 echo "Next steps:"
 echo "  1. Already in Copilot CLI?"
-echo "     Reload extensions, then run /work-overview."
+echo "     Reload extensions so dependency changes can be reconciled, then run /work-overview."
 echo "  2. Starting fresh?"
 echo "     Run: copilot --experimental"
 echo "     Then: /work-overview"
