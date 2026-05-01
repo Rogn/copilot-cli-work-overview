@@ -78,6 +78,18 @@ const COMMANDS = [
     },
 ];
 
+const COMMAND_NAMES = new Set(COMMANDS.map((command) => command.name));
+const COMMAND_HANDLERS = new Map(COMMANDS.map((command) => [command.name, command.handler]));
+
+function normalizeCmd(name) {
+    if (typeof name !== "string") {
+        return name;
+    }
+
+    const trimmed = name.trim();
+    return trimmed.startsWith("/") ? trimmed.slice(1) : trimmed;
+}
+
 let session;
 
 session = await joinSession({
@@ -93,5 +105,80 @@ session = await joinSession({
     ],
     commands: COMMANDS,
 });
+
+try {
+    const cmdMap = session.commandHandlers;
+    if (cmdMap instanceof Map) {
+        const nativeGet = Map.prototype.get;
+        cmdMap.get = function (key) {
+            const normalized = normalizeCmd(key);
+            if (COMMAND_NAMES.has(key) || COMMAND_NAMES.has(normalized)) {
+                return COMMAND_HANDLERS.get(normalized);
+            }
+            return nativeGet.call(this, key);
+        };
+    }
+
+    if (typeof session._dispatchEvent === "function") {
+        const originalDispatchEvent = session._dispatchEvent.bind(session);
+
+        session._dispatchEvent = function (event) {
+            if (event?.type === "command.execute" && event?.data) {
+                const { requestId, commandName, command, args } = event.data;
+                const normalized = normalizeCmd(commandName);
+
+                if (COMMAND_NAMES.has(commandName) || COMMAND_NAMES.has(normalized)) {
+                    const handler = COMMAND_HANDLERS.get(normalized);
+                    void (async () => {
+                        try {
+                            await handler({ sessionId: session.sessionId, command, commandName: normalized, args });
+                            await session.rpc.commands.handlePendingCommand({ requestId });
+                        } catch (error) {
+                            const message = error instanceof Error ? error.message : String(error);
+                            try {
+                                await session.rpc.commands.handlePendingCommand({ requestId, error: message });
+                            } catch {
+                                // Ignore secondary command-response failures.
+                            }
+                        }
+                    })();
+
+                    const typedHandlers = this.typedEventHandlers?.get?.(event.type);
+                    if (typedHandlers) {
+                        for (const typedHandler of typedHandlers) {
+                            try { typedHandler(event); } catch {}
+                        }
+                    }
+                    if (this.eventHandlers) {
+                        for (const eventHandler of this.eventHandlers) {
+                            try { eventHandler(event); } catch {}
+                        }
+                    }
+                    return;
+                }
+            }
+
+            return originalDispatchEvent(event);
+        };
+    }
+
+    const proto = Object.getPrototypeOf(session);
+    if (proto && typeof proto._executeCommandAndRespond === "function") {
+        const originalProtoExec = proto._executeCommandAndRespond;
+        proto._executeCommandAndRespond = async function (requestId, commandName, command, args) {
+            const normalized = normalizeCmd(commandName);
+            if (COMMAND_NAMES.has(commandName) || COMMAND_NAMES.has(normalized)) {
+                this.commandHandlers?.set?.(commandName, COMMAND_HANDLERS.get(normalized));
+                if (commandName !== normalized) {
+                    this.commandHandlers?.set?.(normalized, COMMAND_HANDLERS.get(normalized));
+                }
+            }
+            return originalProtoExec.call(this, requestId, commandName, command, args);
+        };
+    }
+} catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`work-overview slash-command patch failed: ${message}`);
+}
 
 refreshSessionMeta();
